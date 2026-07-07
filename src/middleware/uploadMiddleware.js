@@ -2,22 +2,35 @@
  * Middleware upload file CV menggunakan Multer.
  * - Validasi tipe file (PDF, DOCX, JPG, JPEG, PNG)
  * - Validasi ukuran maksimal (default 20MB, lihat MAX_FILE_SIZE_MB di .env)
- * - File disimpan sementara di folder backend/uploads/tmp dengan nama unik (UUID)
- *   lalu akan dihapus otomatis setelah selesai diparsing (lihat cvController.js)
+ * - File disimpan sementara di folder temp bawaan OS (BUKAN di dalam folder aplikasi),
+ *   karena banyak platform hosting (Railway/Render/SnapDeploy/dll) tidak mengizinkan
+ *   aplikasi menulis file baru di dalam folder project-nya sendiri (read-only filesystem).
+ *   File akan dihapus otomatis setelah selesai diparsing (lihat cvController.js).
  */
 const multer = require('multer');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
 const { ALLOWED_MIME_TYPES, ALLOWED_EXTENSIONS } = require('../utils/fileConstants');
 
-const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'tmp');
+const UPLOAD_DIR = path.join(os.tmpdir(), 'cv-ats-uploads');
 
-// Pastikan folder upload sementara ada
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Pastikan folder upload sementara ada. Dibungkus try/catch supaya kalau GAGAL
+// (misal permission terbatas), aplikasi tidak crash total saat start up —
+// error baru akan muncul saat ada yang benar-benar upload file (lebih mudah dilacak).
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (error) {
+  logger.error('Gagal membuat folder upload sementara', {
+    UPLOAD_DIR,
+    message: error.message,
+  });
 }
 
 const storage = multer.diskStorage({
